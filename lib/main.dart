@@ -87,6 +87,31 @@ class _TodoListScreenState extends State<TodoListScreen> {
   final TextEditingController _textFieldController = TextEditingController();
   final CollectionReference _todosCollection = FirebaseFirestore.instance
       .collection('todos');
+  Future<bool?> _showDeleteConfirmation(DocumentSnapshot todoDoc) async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Task'),
+          content: const Text('Are you sure you want to delete this task?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                _deleteTodoItem(todoDoc);
+                Navigator.of(context).pop(true);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Future<void> _addTodoItem(String title) async {
     if (title.trim().isNotEmpty) {
@@ -109,7 +134,32 @@ class _TodoListScreenState extends State<TodoListScreen> {
   }
 
   Future<void> _deleteTodoItem(DocumentSnapshot todoDoc) async {
-    await _todosCollection.doc(todoDoc.id).delete();
+    try {
+      // Store the task before deleting for potential undo
+      final deletedTask = todoDoc.data() as Map<String, dynamic>;
+      await _todosCollection.doc(todoDoc.id).delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Task deleted'),
+            action: SnackBarAction(
+              label: 'UNDO',
+              onPressed: () async {
+                await _todosCollection.doc(todoDoc.id).set(deletedTask);
+              },
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error deleting task: $e')));
+      }
+    }
   }
 
   Future<void> _displayAddDialog() async {
@@ -274,58 +324,90 @@ class _TodoListScreenState extends State<TodoListScreen> {
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Slidable(
-                  endActionPane: ActionPane(
-                    motion: const ScrollMotion(),
-                    children: [
-                      SlidableAction(
-                        onPressed: (context) => _deleteTodoItem(doc),
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        icon: Icons.delete,
-                        label: 'Delete',
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ],
+                child: Dismissible(
+                  key: ValueKey(doc.id),
+                  background: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                  child: Card(
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      leading: Transform.scale(
-                        scale: 1.3,
-                        child: Checkbox(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
+                  confirmDismiss: (direction) async {
+                    return await _showDeleteConfirmation(doc) ?? false;
+                  },
+                  onDismissed: (direction) => _deleteTodoItem(doc),
+                  child: Slidable(
+                    key: ValueKey(doc.id),
+                    endActionPane: ActionPane(
+                      motion: const ScrollMotion(),
+                      children: [
+                        SlidableAction(
+                          onPressed: (context) => _showDeleteConfirmation(doc),
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          icon: Icons.delete,
+                          label: 'Delete',
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ],
+                    ),
+                    child: Card(
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        leading: Transform.scale(
+                          scale: 1.3,
+                          child: Checkbox(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            value: isDone,
+                            onChanged: (_) => _toggleTodoStatus(doc),
                           ),
-                          value: isDone,
-                          onChanged: (_) => _toggleTodoStatus(doc),
                         ),
-                      ),
-                      title: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          decoration:
-                              isDone
-                                  ? TextDecoration.lineThrough
-                                  : TextDecoration.none,
-                          color:
-                              isDone
-                                  ? Theme.of(context).disabledColor
-                                  : Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium?.color,
+                        title: Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            decoration:
+                                isDone
+                                    ? TextDecoration.lineThrough
+                                    : TextDecoration.none,
+                            color:
+                                isDone
+                                    ? Theme.of(context).disabledColor
+                                    : Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium?.color,
+                          ),
                         ),
-                      ),
-                      trailing: Icon(
-                        isDone ? Icons.check_circle : Icons.circle_outlined,
-                        color:
-                            isDone
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).disabledColor,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isDone
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              color:
+                                  isDone
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).disabledColor,
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.redAccent,
+                              ),
+                              onPressed: () => _showDeleteConfirmation(doc),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
