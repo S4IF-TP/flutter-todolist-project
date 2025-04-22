@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 void main() {
   runApp(const MyApp());
@@ -12,16 +13,23 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Todo List',
       theme: ThemeData(
-        primarySwatch: Colors.blue, // Or any other color scheme
+        primarySwatch: Colors.deepPurple,
         useMaterial3: true,
+        textTheme: GoogleFonts.latoTextTheme(Theme.of(context).textTheme),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
       ),
       home: const TodoListScreen(),
-      debugShowCheckedModeBanner: false, // Optional: Removes the debug banner
+      debugShowCheckedModeBanner: false,
     );
   }
 }
 
-// --- TodoListScreen Widget (Stateful) ---
 class TodoListScreen extends StatefulWidget {
   const TodoListScreen({super.key});
 
@@ -30,21 +38,16 @@ class TodoListScreen extends StatefulWidget {
 }
 
 class _TodoListScreenState extends State<TodoListScreen> {
-  // --- State Variables ---
-  final List<TodoItem> _todos = []; // List to hold our todo items
-  final TextEditingController _textFieldController = TextEditingController();
+  final List<TodoItem> _todos = [];
+  final TextEditingController _textController = TextEditingController();
 
-  // --- Methods ---
   void _addTodoItem(String title) {
-    // Only add if the title is not empty
-    if (title.trim().isNotEmpty) {
-      setState(() {
-        // Use setState to update the UI
-        _todos.add(TodoItem(title: title.trim()));
-      });
-      _textFieldController.clear(); // Clear the text field
-      Navigator.of(context).pop(); // Close the dialog
-    }
+    if (title.trim().isEmpty) return;
+    setState(() {
+      _todos.insert(0, TodoItem(title: title.trim()));
+    });
+    _textController.clear();
+    Navigator.of(context).pop();
   }
 
   void _toggleTodoStatus(int index) {
@@ -54,101 +57,162 @@ class _TodoListScreenState extends State<TodoListScreen> {
   }
 
   void _deleteTodoItem(int index) {
+    final deletedItem = _todos[index];
     setState(() {
       _todos.removeAt(index);
     });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Deleted "${deletedItem.title}"'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () {
+            setState(() {
+              _todos.insert(index, deletedItem);
+            });
+          },
+        ),
+      ),
+    );
   }
 
-  // --- Dialog for adding new todos ---
-  Future<void> _displayAddDialog() async {
-    return showDialog<void>(
+  Future<void> _showAddDialog() async {
+    return showModalBottomSheet(
       context: context,
-      barrierDismissible: true, // Allow closing by tapping outside
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Add a new todo item'),
-          content: TextField(
-            controller: _textFieldController,
-            decoration: const InputDecoration(hintText: 'Enter todo title'),
-            autofocus: true, // Automatically focus the text field
-            onSubmitted: (value) => _addTodoItem(value), // Add on Enter key
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            left: 16,
+            right: 16,
+            top: 24,
           ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                _textFieldController.clear(); // Clear if cancelled
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: const Text('Add'),
-              onPressed: () {
-                _addTodoItem(_textFieldController.text);
-              },
-            ),
-          ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'New Todo',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _textController,
+                decoration: InputDecoration(
+                  hintText: 'What needs to be done?',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onSubmitted: _addTodoItem,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => _addTodoItem(_textController.text),
+                icon: const Icon(Icons.check),
+                label: const Text('Add Todo'),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
-  // --- Build Method ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Todo List'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: const Text('My Beautiful Todos'),
+        centerTitle: true,
+        elevation: 0,
       ),
-      body: ListView.builder(
-        itemCount: _todos.length,
-        itemBuilder: (context, index) {
-          final todo = _todos[index];
-          return ListTile(
-            leading: Checkbox(
-              value: todo.isDone,
-              onChanged: (bool? value) {
-                _toggleTodoStatus(index);
-              },
-            ),
-            title: Text(
-              todo.title,
-              style: TextStyle(
-                decoration:
-                    todo.isDone
-                        ? TextDecoration
-                            .lineThrough // Strikethrough if done
-                        : TextDecoration.none,
-                color: todo.isDone ? Colors.grey : null, // Grey out if done
+      body:
+          _todos.isEmpty
+              ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.checklist, size: 64, color: Colors.grey[300]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No tasks yet',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium!.copyWith(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              )
+              : ListView.builder(
+                padding: const EdgeInsets.all(8),
+                itemCount: _todos.length,
+                itemBuilder: (context, index) {
+                  final todo = _todos[index];
+                  return Dismissible(
+                    key: ValueKey(todo),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (_) => _deleteTodoItem(index),
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 16,
+                        ),
+                        leading: Checkbox(
+                          value: todo.isDone,
+                          onChanged: (_) => _toggleTodoStatus(index),
+                        ),
+                        title: Text(
+                          todo.title,
+                          style: TextStyle(
+                            decoration:
+                                todo.isDone
+                                    ? TextDecoration.lineThrough
+                                    : TextDecoration.none,
+                            color: todo.isDone ? Colors.grey : null,
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.info_outline),
+                          onPressed: () {},
+                        ),
+                        onTap: () => _toggleTodoStatus(index),
+                      ),
+                    ),
+                  );
+                },
               ),
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              onPressed: () => _deleteTodoItem(index),
-              tooltip: 'Delete Item',
-            ),
-            onTap: () => _toggleTodoStatus(index), // Toggle status on tap too
-          );
-        },
-      ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _displayAddDialog, // Show the add dialog on press
-        tooltip: 'Add Item',
+        onPressed: _showAddDialog,
         child: const Icon(Icons.add),
       ),
     );
   }
 
-  // Dispose the controller when the widget is removed from the tree
   @override
   void dispose() {
-    _textFieldController.dispose();
+    _textController.dispose();
     super.dispose();
   }
 }
 
-// --- TodoItem Model Class ---
 class TodoItem {
   String title;
   bool isDone;
