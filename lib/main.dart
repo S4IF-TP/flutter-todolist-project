@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'firebase_options.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
-// A global notifier to switch between light and dark themes
-final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const MyApp());
 }
 
@@ -13,34 +18,45 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Define light theme
     final lightTheme = ThemeData(
-      primarySwatch: Colors.deepPurple,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.deepPurple,
+        brightness: Brightness.light,
+        primary: Colors.deepPurple,
+        secondary: Colors.purpleAccent,
+      ),
       useMaterial3: true,
-      textTheme: GoogleFonts.latoTextTheme(),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
+      textTheme: GoogleFonts.poppinsTextTheme(),
+      cardTheme: CardTheme(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.symmetric(vertical: 4),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
 
-    // Define dark theme
     final darkTheme = ThemeData(
-      brightness: Brightness.dark,
-      primarySwatch: Colors.deepPurple,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.deepPurple,
+        brightness: Brightness.dark,
+        primary: Colors.deepPurple[300],
+        secondary: Colors.purpleAccent[200],
+      ),
       useMaterial3: true,
-      textTheme: GoogleFonts.latoTextTheme(
+      textTheme: GoogleFonts.poppinsTextTheme(
         ThemeData(brightness: Brightness.dark).textTheme,
       ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
+      cardTheme: CardTheme(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.symmetric(vertical: 4),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
 
@@ -48,7 +64,7 @@ class MyApp extends StatelessWidget {
       valueListenable: themeNotifier,
       builder: (_, currentMode, __) {
         return MaterialApp(
-          title: 'Flutter Todo List',
+          title: 'Todo Master',
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: currentMode,
@@ -68,84 +84,101 @@ class TodoListScreen extends StatefulWidget {
 }
 
 class _TodoListScreenState extends State<TodoListScreen> {
-  final List<TodoItem> _todos = [];
-  final TextEditingController _textController = TextEditingController();
+  final TextEditingController _textFieldController = TextEditingController();
+  final CollectionReference _todosCollection = FirebaseFirestore.instance
+      .collection('todos');
 
-  void _addTodoItem(String title) {
-    if (title.trim().isEmpty) return;
-    setState(() {
-      _todos.insert(0, TodoItem(title: title.trim()));
-    });
-    _textController.clear();
-    Navigator.of(context).pop();
+  Future<void> _addTodoItem(String title) async {
+    if (title.trim().isNotEmpty) {
+      await _todosCollection.add({
+        'title': title.trim(),
+        'isDone': false,
+        'createdAt': Timestamp.now(),
+      });
+      _textFieldController.clear();
+      if (mounted) {
+        Navigator.of(context).maybePop();
+      }
+    }
   }
 
-  void _toggleTodoStatus(int index) {
-    setState(() {
-      _todos[index].isDone = !_todos[index].isDone;
-    });
+  Future<void> _toggleTodoStatus(DocumentSnapshot todoDoc) async {
+    final currentStatus =
+        (todoDoc.data() as Map<String, dynamic>)['isDone'] as bool? ?? false;
+    await _todosCollection.doc(todoDoc.id).update({'isDone': !currentStatus});
   }
 
-  void _deleteTodoItem(int index) {
-    final deletedItem = _todos[index];
-    setState(() {
-      _todos.removeAt(index);
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Deleted "${deletedItem.title}"'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () {
-            setState(() {
-              _todos.insert(index, deletedItem);
-            });
-          },
-        ),
-      ),
-    );
+  Future<void> _deleteTodoItem(DocumentSnapshot todoDoc) async {
+    await _todosCollection.doc(todoDoc.id).delete();
   }
 
-  Future<void> _showAddDialog() async {
-    return showModalBottomSheet(
+  Future<void> _displayAddDialog() async {
+    return showDialog<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-            left: 16,
-            right: 16,
-            top: 24,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'New Todo',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _textController,
-                decoration: InputDecoration(
-                  hintText: 'What needs to be done?',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Add New Task',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                onSubmitted: _addTodoItem,
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () => _addTodoItem(_textController.text),
-                icon: const Icon(Icons.check),
-                label: const Text('Add Todo'),
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _textFieldController,
+                  decoration: InputDecoration(
+                    hintText: 'What needs to be done?',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 16,
+                    ),
+                  ),
+                  autofocus: true,
+                  onSubmitted: (value) => _addTodoItem(value),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor:
+                            Theme.of(context).colorScheme.secondary,
+                      ),
+                      child: const Text('Cancel'),
+                      onPressed: () {
+                        _textFieldController.clear();
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.primaryContainer,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Add Task'),
+                      onPressed: () => _addTodoItem(_textFieldController.text),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -156,9 +189,8 @@ class _TodoListScreenState extends State<TodoListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Beautiful Todos'),
+        title: const Text('Todo Master'),
         centerTitle: true,
-        elevation: 0,
         actions: [
           IconButton(
             icon: Icon(
@@ -175,86 +207,146 @@ class _TodoListScreenState extends State<TodoListScreen> {
           ),
         ],
       ),
-      body:
-          _todos.isEmpty
-              ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.checklist, size: 64, color: Colors.grey[300]),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No tasks yet',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleMedium!.copyWith(color: Colors.grey),
-                    ),
-                  ],
-                ),
-              )
-              : ListView.builder(
-                padding: const EdgeInsets.all(8),
-                itemCount: _todos.length,
-                itemBuilder: (context, index) {
-                  final todo = _todos[index];
-                  return Dismissible(
-                    key: ValueKey(todo),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.delete, color: Colors.white),
-                    ),
-                    onDismissed: (_) => _deleteTodoItem(index),
-                    child: Card(
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 8,
-                          horizontal: 16,
-                        ),
-                        leading: Checkbox(
-                          value: todo.isDone,
-                          onChanged: (_) => _toggleTodoStatus(index),
-                        ),
-                        title: Text(
-                          todo.title,
-                          style: TextStyle(
-                            decoration:
-                                todo.isDone ? TextDecoration.lineThrough : null,
-                            color: todo.isDone ? Colors.grey : null,
-                          ),
-                        ),
-                        onTap: () => _toggleTodoStatus(index),
-                      ),
-                    ),
-                  );
-                },
+      body: StreamBuilder<QuerySnapshot>(
+        stream:
+            _todosCollection
+                .orderBy('createdAt', descending: false)
+                .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error loading todos',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
               ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddDialog,
-        child: const Icon(Icons.add),
+            );
+          }
+          final docs = snapshot.data?.docs;
+          if (docs == null || docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No tasks yet!',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap the + button to add your first task',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final doc = docs[index];
+              final data = doc.data() as Map<String, dynamic>?;
+              final title = data?['title'] as String? ?? '';
+              final isDone = data?['isDone'] as bool? ?? false;
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Slidable(
+                  endActionPane: ActionPane(
+                    motion: const ScrollMotion(),
+                    children: [
+                      SlidableAction(
+                        onPressed: (context) => _deleteTodoItem(doc),
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        icon: Icons.delete,
+                        label: 'Delete',
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ],
+                  ),
+                  child: Card(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      leading: Transform.scale(
+                        scale: 1.3,
+                        child: Checkbox(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          value: isDone,
+                          onChanged: (_) => _toggleTodoStatus(doc),
+                        ),
+                      ),
+                      title: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          decoration:
+                              isDone
+                                  ? TextDecoration.lineThrough
+                                  : TextDecoration.none,
+                          color:
+                              isDone
+                                  ? Theme.of(context).disabledColor
+                                  : Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium?.color,
+                        ),
+                      ),
+                      trailing: Icon(
+                        isDone ? Icons.check_circle : Icons.circle_outlined,
+                        color:
+                            isDone
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).disabledColor,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _displayAddDialog,
+        icon: const Icon(Icons.add),
+        label: const Text('Add Task'),
+        elevation: 4,
       ),
     );
   }
 
   @override
   void dispose() {
-    _textController.dispose();
+    _textFieldController.dispose();
     super.dispose();
   }
-}
-
-class TodoItem {
-  String title;
-  bool isDone;
-
-  TodoItem({required this.title, this.isDone = false});
 }
