@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+// A global notifier to switch between light and dark themes
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+
 void main() {
   runApp(const MyApp());
 }
@@ -10,22 +13,49 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Todo List',
-      theme: ThemeData(
-        primarySwatch: Colors.deepPurple,
-        useMaterial3: true,
-        textTheme: GoogleFonts.latoTextTheme(Theme.of(context).textTheme),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+    // Define light theme
+    final lightTheme = ThemeData(
+      primarySwatch: Colors.deepPurple,
+      useMaterial3: true,
+      textTheme: GoogleFonts.latoTextTheme(),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
-      home: const TodoListScreen(),
-      debugShowCheckedModeBanner: false,
+    );
+
+    // Define dark theme
+    final darkTheme = ThemeData(
+      brightness: Brightness.dark,
+      primarySwatch: Colors.deepPurple,
+      useMaterial3: true,
+      textTheme: GoogleFonts.latoTextTheme(
+        ThemeData(brightness: Brightness.dark).textTheme,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (_, currentMode, __) {
+        return MaterialApp(
+          title: 'Flutter Todo List',
+          theme: lightTheme,
+          darkTheme: darkTheme,
+          themeMode: currentMode,
+          home: const TodoListScreen(),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }
@@ -129,6 +159,21 @@ class _TodoListScreenState extends State<TodoListScreen> {
         title: const Text('My Beautiful Todos'),
         centerTitle: true,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(
+              themeNotifier.value == ThemeMode.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+            onPressed: () {
+              themeNotifier.value =
+                  themeNotifier.value == ThemeMode.light
+                      ? ThemeMode.dark
+                      : ThemeMode.light;
+            },
+          ),
+        ],
       ),
       body:
           _todos.isEmpty
@@ -183,15 +228,9 @@ class _TodoListScreenState extends State<TodoListScreen> {
                           todo.title,
                           style: TextStyle(
                             decoration:
-                                todo.isDone
-                                    ? TextDecoration.lineThrough
-                                    : TextDecoration.none,
+                                todo.isDone ? TextDecoration.lineThrough : null,
                             color: todo.isDone ? Colors.grey : null,
                           ),
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.info_outline),
-                          onPressed: () {},
                         ),
                         onTap: () => _toggleTodoStatus(index),
                       ),
