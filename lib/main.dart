@@ -84,6 +84,40 @@ class TodoListScreen extends StatefulWidget {
   State<TodoListScreen> createState() => _TodoListScreenState();
 }
 
+// Add these helper methods to your state class:
+Color _getDueDateColor(BuildContext context, DateTime dueDate) {
+  final now = DateTime.now();
+  final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
+  final today = DateTime(now.year, now.month, now.day);
+
+  if (due.isBefore(today)) {
+    return Colors.red.shade400; // Overdue
+  } else if (due == today) {
+    return Theme.of(context).colorScheme.primaryContainer; // Due today
+  } else if (due.difference(today).inDays <= 3) {
+    return Colors.orange.shade300; // Due soon
+  }
+  return Theme.of(context).colorScheme.secondaryContainer; // Future due date
+}
+
+String _getDueDateText(DateTime dueDate) {
+  final now = DateTime.now();
+  final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
+  final today = DateTime(now.year, now.month, now.day);
+  final diff = due.difference(today).inDays;
+
+  if (due.isBefore(today)) {
+    return 'Overdue by ${today.difference(due).inDays} days';
+  } else if (due == today) {
+    return 'Due today';
+  } else if (diff == 1) {
+    return 'Due tomorrow';
+  } else if (diff <= 7) {
+    return 'Due in $diff days';
+  }
+  return 'Due ${DateFormat('MMM dd').format(dueDate)}';
+}
+
 class _TodoListScreenState extends State<TodoListScreen> {
   final TextEditingController _textFieldController = TextEditingController();
   final CollectionReference _todosCollection = FirebaseFirestore.instance
@@ -125,6 +159,11 @@ class _TodoListScreenState extends State<TodoListScreen> {
         await _todosCollection.doc(todoDoc.id).update({
           'title': newTitle.trim(),
           'updatedAt': Timestamp.now(),
+          'dueDate': _dueDate != null ? Timestamp.fromDate(_dueDate!) : null,
+        });
+        setState(() {
+          _dueDate = null;
+          _hasDueDate = false;
         });
         _textFieldController.clear();
         if (mounted) {
@@ -148,6 +187,11 @@ class _TodoListScreenState extends State<TodoListScreen> {
         'title': title.trim(),
         'isDone': false,
         'createdAt': Timestamp.now(),
+        'dueDate': _dueDate != null ? Timestamp.fromDate(_dueDate!) : null,
+      });
+      setState(() {
+        _dueDate = null;
+        _hasDueDate = false;
       });
       _textFieldController.clear();
       if (mounted) {
@@ -160,6 +204,32 @@ class _TodoListScreenState extends State<TodoListScreen> {
     final currentStatus =
         (todoDoc.data() as Map<String, dynamic>)['isDone'] as bool? ?? false;
     await _todosCollection.doc(todoDoc.id).update({'isDone': !currentStatus});
+  }
+
+  Future<DateTime?> _selectDueDate(
+    BuildContext context, {
+    DateTime? initialDate,
+  }) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(DateTime.now().year + 2),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).colorScheme.primary,
+              onPrimary: Colors.white,
+              surface: Theme.of(context).colorScheme.surface,
+              onSurface: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    return picked;
   }
 
   Future<void> _deleteTodoItem(DocumentSnapshot todoDoc) async {
@@ -190,6 +260,9 @@ class _TodoListScreenState extends State<TodoListScreen> {
       }
     }
   }
+
+  DateTime? _dueDate;
+  bool _hasDueDate = false;
 
   Future<void> _displayAddDialog() async {
     return showDialog<void>(
@@ -226,6 +299,48 @@ class _TodoListScreenState extends State<TodoListScreen> {
                   ),
                   autofocus: true,
                   onSubmitted: (value) => _addTodoItem(value),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        Icons.calendar_today,
+                        color:
+                            _hasDueDate
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).disabledColor,
+                      ),
+                      onPressed: () async {
+                        final date = await _selectDueDate(
+                          context,
+                          initialDate: _dueDate,
+                        );
+                        if (date != null) {
+                          setState(() {
+                            _dueDate = date;
+                            _hasDueDate = true;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _hasDueDate
+                          ? 'Due: ${DateFormat('MMM dd, yyyy').format(_dueDate!)}'
+                          : 'No due date',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (_hasDueDate)
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          setState(() {
+                            _dueDate = null;
+                            _hasDueDate = false;
+                          });
+                        },
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -267,7 +382,10 @@ class _TodoListScreenState extends State<TodoListScreen> {
   Future<void> _showEditDialog(DocumentSnapshot todoDoc) async {
     final data = todoDoc.data() as Map<String, dynamic>;
     _textFieldController.text = data['title'] ?? '';
-
+    setState(() {
+      _dueDate = data['dueDate']?.toDate();
+      _hasDueDate = data['dueDate'] != null;
+    });
     return showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -366,9 +484,8 @@ class _TodoListScreenState extends State<TodoListScreen> {
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream:
-            _todosCollection
-                .orderBy('createdAt', descending: false)
-                .snapshots(),
+            _todosCollection.orderBy('dueDate', descending: false).snapshots(),
+
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -494,13 +611,63 @@ class _TodoListScreenState extends State<TodoListScreen> {
                           ),
                         ),
                         // Add this as a subtitle in your ListTile
-                        subtitle:
-                            data?['updatedAt'] != null
-                                ? Text(
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Display UpdatedAt if it exists
+                            if (data?['updatedAt'] != null)
+                              Padding(
+                                // Add some padding below UpdatedAt if DueDate is also present
+                                padding: EdgeInsets.only(
+                                  bottom: data?['dueDate'] != null ? 4.0 : 0.0,
+                                ),
+                                child: Text(
                                   'Updated: ${DateFormat('MMM dd, hh:mm a').format((data!['updatedAt'] as Timestamp).toDate())}',
                                   style: Theme.of(context).textTheme.bodySmall,
-                                )
-                                : null,
+                                ),
+                              ),
+                            // Display DueDate if it exists
+                            if (data?['dueDate'] != null)
+                              Container(
+                                // margin: const EdgeInsets.only(top: 4), // Only needed if UpdatedAt is NOT present
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 3,
+                                ), // Slightly smaller padding
+                                decoration: BoxDecoration(
+                                  // Use the helper function for color
+                                  color: _getDueDateColor(
+                                    context,
+                                    (data!['dueDate'] as Timestamp).toDate(),
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    8,
+                                  ), // Match card radius better
+                                ),
+                                child: Text(
+                                  // Use the helper function for text
+                                  _getDueDateText(
+                                    (data!['dueDate'] as Timestamp).toDate(),
+                                  ),
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall?.copyWith(
+                                    // Adjust color based on theme brightness for better contrast
+                                    color:
+                                        Theme.of(context).brightness ==
+                                                Brightness.light
+                                            ? Colors
+                                                .black87 // Or specific color for light theme
+                                            : Colors
+                                                .white, // Or specific color for dark theme
+                                    fontWeight:
+                                        FontWeight
+                                            .w500, // Make it slightly bolder
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                         // Replace your existing trailing with this:
                         // Replace your existing trailing with this:
                         // Replace your existing trailing with this:
