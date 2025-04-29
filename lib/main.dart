@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:intl/intl.dart'; // For date formatting
 
 ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 
@@ -87,6 +88,8 @@ class _TodoListScreenState extends State<TodoListScreen> {
   final TextEditingController _textFieldController = TextEditingController();
   final CollectionReference _todosCollection = FirebaseFirestore.instance
       .collection('todos');
+  late int _hoveredIndex = -1; // For hover effect (optional)
+
   Future<bool?> _showDeleteConfirmation(DocumentSnapshot todoDoc) async {
     return showDialog<bool>(
       context: context,
@@ -111,6 +114,32 @@ class _TodoListScreenState extends State<TodoListScreen> {
         );
       },
     );
+  }
+
+  Future<void> _updateTodoItem(
+    DocumentSnapshot todoDoc,
+    String newTitle,
+  ) async {
+    if (newTitle.trim().isNotEmpty) {
+      try {
+        await _todosCollection.doc(todoDoc.id).update({
+          'title': newTitle.trim(),
+          'updatedAt': Timestamp.now(),
+        });
+        _textFieldController.clear();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Task updated successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error updating task: $e')));
+        }
+      }
+    }
   }
 
   Future<void> _addTodoItem(String title) async {
@@ -224,6 +253,84 @@ class _TodoListScreenState extends State<TodoListScreen> {
                       ),
                       child: const Text('Add Task'),
                       onPressed: () => _addTodoItem(_textFieldController.text),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditDialog(DocumentSnapshot todoDoc) async {
+    final data = todoDoc.data() as Map<String, dynamic>;
+    _textFieldController.text = data['title'] ?? '';
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Edit Task',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _textFieldController,
+                  decoration: InputDecoration(
+                    hintText: 'Edit your task',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 16,
+                    ),
+                  ),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor:
+                            Theme.of(context).colorScheme.secondary,
+                      ),
+                      child: const Text('Cancel'),
+                      onPressed: () {
+                        _textFieldController.clear();
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.primaryContainer,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Save Changes'),
+                      onPressed: () {
+                        _updateTodoItem(todoDoc, _textFieldController.text);
+                        Navigator.of(context).pop();
+                      },
                     ),
                   ],
                 ),
@@ -386,9 +493,21 @@ class _TodoListScreenState extends State<TodoListScreen> {
                                     ).textTheme.titleMedium?.color,
                           ),
                         ),
+                        // Add this as a subtitle in your ListTile
+                        subtitle:
+                            data?['updatedAt'] != null
+                                ? Text(
+                                  'Updated: ${DateFormat('MMM dd, hh:mm a').format((data!['updatedAt'] as Timestamp).toDate())}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                )
+                                : null,
+                        // Replace your existing trailing with this:
+                        // Replace your existing trailing with this:
+                        // Replace your existing trailing with this:
                         trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisSize: MainAxisSize.min, // Keep this
                           children: [
+                            // Status Icon (Keep as is)
                             Icon(
                               isDone
                                   ? Icons.check_circle
@@ -398,13 +517,32 @@ class _TodoListScreenState extends State<TodoListScreen> {
                                       ? Theme.of(context).colorScheme.primary
                                       : Theme.of(context).disabledColor,
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 8), // Keep spacing
+                            // --- EDIT BUTTON ---
+                            // Use IconButton instead of Material/InkWell
                             IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: Colors.redAccent,
-                              ),
+                              icon: const Icon(Icons.edit_outlined),
+                              color: Colors.blue, // Set color directly
+                              tooltip: 'Edit Task', // Good for accessibility
+                              onPressed: () => _showEditDialog(doc),
+                              // Optional: Adjust splash radius if needed
+                              // splashRadius: 20,
+                              // Optional: Add constraints if default padding is too large
+                              // constraints: BoxConstraints(),
+                              // padding: EdgeInsets.zero, // Remove padding if needed
+                            ),
+                            // --- DELETE BUTTON ---
+                            // Use IconButton instead of Material/InkWell
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              color: Colors.redAccent, // Set color directly
+                              tooltip: 'Delete Task', // Good for accessibility
                               onPressed: () => _showDeleteConfirmation(doc),
+                              // Optional: Adjust splash radius if needed
+                              // splashRadius: 20,
+                              // Optional: Add constraints if default padding is too large
+                              // constraints: BoxConstraints(),
+                              // padding: EdgeInsets.zero, // Remove padding if needed
                             ),
                           ],
                         ),
