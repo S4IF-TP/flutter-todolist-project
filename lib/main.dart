@@ -1021,7 +1021,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
                                         ),
                                         child: Text(
                                           _getDueDateText(
-                                            (data!['dueDate'] as Timestamp)
+                                            (data['dueDate'] as Timestamp)
                                                 .toDate(),
                                           ),
                                           style:
