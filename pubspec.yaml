@@ -38,6 +38,7 @@ dependencies:
   firebase_core: ^3.13.0 # Should be added by flutterfire configure
   cloud_firestore: ^5.6.6 # Add this line
   flutter_slidable: ^4.0.0
+  firebase_auth: ^5.5.3 # <--- ADD THIS LINE
   intl: ^0.20.2 # or the latest version
 
 dev_dependencies:
